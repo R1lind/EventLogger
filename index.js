@@ -47,8 +47,9 @@ const commands = [
 ].map(c => c.toJSON());
 
 // --- EVENTS ---
-client.once('clientReady', async () => {
-  console.log(`Logged in as ${client.user.tag}!`);
+client.once('ready', async () => {
+    console.log(`Logged in as ${client.user.tag}!`);
+});
 
   // Register slash commands
   if (GUILD_ID) {
