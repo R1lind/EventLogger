@@ -20,15 +20,27 @@ require('dotenv').config(); // Load .env file
 const config = JSON.parse(fs.readFileSync('config.json', 'utf8'));
 const BOT_TOKEN = process.env.DISCORD_TOKEN;
 const CLIENT_ID = process.env.CLIENT_ID;
-const GUILD_ID = process.env.GUILD_ID; // IMPORTANT: Replace with your Server ID for instant command updates
+const GUILD_ID = process.env.GUILD_ID;
 
-// In-memory store for pending data (attachment and event type)
+// --- PERSISTENT EVENT COUNTS ---
+const countsFile = 'counts.json';
+let userEventCounts = {};
+
+// Load counts from file if it exists
+if (fs.existsSync(countsFile)) {
+    try {
+        userEventCounts = JSON.parse(fs.readFileSync(countsFile, 'utf8'));
+    } catch (err) {
+        console.error('Error reading counts.json, starting fresh.');
+        userEventCounts = {};
+    }
+}
+
+// --- IN-MEMORY PENDING SUBMISSIONS ---
 const pendingSubmissions = new Map();
 
 // --- BOT CLIENT SETUP ---
-const client = new Client({
-    intents: [GatewayIntentBits.Guilds]
-});
+const client = new Client({ intents: [GatewayIntentBits.Guilds] });
 
 // --- COMMAND DEFINITIONS ---
 const commands = [
@@ -72,7 +84,7 @@ const commands = [
 ].map(command => command.toJSON());
 
 // --- REGISTER COMMANDS ---
-client.once('clientReady', async () => {  // FIXED: ready event name
+client.once('clientReady', async () => {
     console.log(`Logged in as ${client.user.tag}!`);
 
     if (GUILD_ID) {
@@ -89,6 +101,7 @@ client.once('clientReady', async () => {  // FIXED: ready event name
 
 // --- INTERACTIONS HANDLER ---
 client.on('interactionCreate', async interaction => {
+
     // --- AUTOCOMPLETE ---
     if (interaction.isAutocomplete()) {
         if (interaction.commandName === 'logevent' || interaction.commandName === 'removeeventtype') {
@@ -178,16 +191,24 @@ client.on('interactionCreate', async interaction => {
         if (!pendingData) return interaction.reply({ content: 'An error occurred: session data not found. Please try again.', flags: [MessageFlags.Ephemeral] });
 
         const { proofUrl, eventType } = pendingData;
-        const logChannel = await client.channels.fetch(config.logChannelId).catch(() => null);
 
+        // --- INCREMENT USER EVENT COUNT ---
+        const userId = interaction.user.id;
+        userEventCounts[userId] = (userEventCounts[userId] || 0) + 1;
+        fs.writeFileSync(countsFile, JSON.stringify(userEventCounts, null, 2));
+
+        // --- GET LOG CHANNEL ---
+        const logChannel = await client.channels.fetch(config.logChannelId).catch(() => null);
         if (!logChannel) return interaction.reply({ content: 'Error: The log channel could not be found. Please ask an admin to set it with `/setlogchannel`.', flags: [MessageFlags.Ephemeral] });
 
+        // --- CREATE EMBED ---
         const logEmbed = new EmbedBuilder()
             .setColor(0x00AE86)
             .setTitle('New Event Log Submitted')
             .addFields(
                 { name: 'Submitted By', value: `${interaction.user} (${interaction.user.tag})`, inline: true },
-                { name: 'Host\'s Username', value: hostUsername, inline: true },
+                { name: 'Total Events Submitted', value: `${userEventCounts[userId]}`, inline: true },
+                { name: "Host's Username", value: hostUsername, inline: true },
                 { name: 'Event Type', value: eventType, inline: true },
                 { name: 'Event Time', value: eventTime, inline: false }
             )
